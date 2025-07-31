@@ -86,7 +86,6 @@ class NeuralNetwork:
       # For the output layer (using Sigmoid), Xavier is more appropriate, but He can also work reasonably well.
       # A common practice is to use He for all layers if ReLU is prevalent, or
       # be more precise and use He for ReLU layers and Xavier for Sigmoid/Tanh.
-      # For simplicity and effectiveness with your current setup:
 
       # He Initialization for layers leading to ReLU activations
       if l < len(self.layer_sizes) - 2: # All hidden layers
@@ -264,7 +263,7 @@ if __name__ == "__main__":
   processed_texts = []
   nlp = spacy.load("en_core_web_sm", disable=['parser', 'ner']) # loads Tok2Vec, Tagger (POS tagging), Attribute Ruler, Lemmatizer, and disabling the Parser and named Entity Recognition as part of the spacy model pipeline
 
-  for doc in nlp.pipe(df['text'].apply(clean_text), batch_size=1000, n_process=cpu_count()): # The 50000 texts are processed in batches of 1000 each by the number of worker processes (equal to number of CPU cores). Each worker process executes the pipeline (Tok2Vec -> Tagger (POS tagging) -> Attribute Ruler -> Lemmatizer) for those 1000 each, and returns the combined results (combined tokens) in a 'doc'.
+  for doc in nlp.pipe(df['text'].apply(clean_text), batch_size=1000, n_process=cpu_count()): # The 50000 texts are processed in batches of 1000 by each of the worker processes (equal to number of CPU cores) parallely. Each worker process executes the pipeline (Tok2Vec -> Tagger (POS tagging) -> Attribute Ruler -> Lemmatizer) for those 1000 each, and returns the combined results (combined tokens) in a 'doc'.
       lemma_tokens = []
       for token in doc:
           if not token.is_stop and token.is_alpha: # tokens that are stop words and non-alphabetic are not considered
