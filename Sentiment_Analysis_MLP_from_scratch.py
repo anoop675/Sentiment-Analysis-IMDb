@@ -26,8 +26,6 @@ from multiprocessing import Pool, cpu_count
 Note: Even with spaCy, for 50,000 documents, it will still take some time as it's doing complex linguistic analysis. But its usually faster than NLTK at this scale.
 '''
 
-nlp = spacy.load("en_core_web_sm", disable=['parser', 'ner']) # Disable components you don't need for speed
-
 def load_imdb_data(path, extract_path):
   texts = []
   labels = []
@@ -56,34 +54,24 @@ def load_imdb_data(path, extract_path):
         print(f"folder with path '{folder_path}' does not exist")
 
   return texts, labels
-  
+
 def clean_text(text):
   text = text.lower() # lowercasing text
   text = re.sub(r'<br />', ' ', text) # removing HTML break '<br />' tags
   text = re.sub(r'[^a-z\s]', '', text) # removing punctuation and numbers to keep only letters and spaces
   return text
-  
+
 def tokenize_and_lemmantize_text(text):
   lemma_tokens = []
-  lemmatizer = WordNetLemmatizer() #unfortunately the WordNetLemmatizer 
+  lemmatizer = WordNetLemmatizer() #unfortunately the WordNetLemmatizer
   tokens = nltk.word_tokenize(text)
-    
+
   for word in tokens:
     if word not in stopwords.words('english') and word.isalpha(): # Checking if it's not a stop word and is primarily alphabetic
       lemma = lemmatizer.lemmatize(word) #reduces inflected forms of a word to its base or dictionary form (lemma) using wordnet's morphological analysis and vocabulary
       lemma_tokens.append(lemma)
 
   return " ".join(lemma_tokens) # return as string for TF-IDF vectorization
-
-def tokenize_and_lemmatize_text_with_spacy(text):
-    # Process the text with spaCy
-    doc = nlp(text)
-    lemma_tokens = []
-    for token in doc:
-        if not token.is_stop and token.is_alpha: # Checking if it's not a stop word and is primarily alphabetic
-            lemma_tokens.append(token.lemma_) # .lemma_ gives the base form
-
-    return " ".join(lemma_tokens)
 
 class NeuralNetwork:
   def __init__(self, layer_sizes, learning_rate):
@@ -99,14 +87,14 @@ class NeuralNetwork:
       # A common practice is to use He for all layers if ReLU is prevalent, or
       # be more precise and use He for ReLU layers and Xavier for Sigmoid/Tanh.
       # For simplicity and effectiveness with your current setup:
-      
+
       # He Initialization for layers leading to ReLU activations
       if l < len(self.layer_sizes) - 2: # All hidden layers
-          limit = np.sqrt(6 / self.layer_sizes[l]) 
+          limit = np.sqrt(6 / self.layer_sizes[l])
       else: # Output layer (leading to Sigmoid)
           # Xavier Initialization (Glorot Uniform) for the output layer
-          limit = np.sqrt(6 / (self.layer_sizes[l] + self.layer_sizes[l+1])) 
-          
+          limit = np.sqrt(6 / (self.layer_sizes[l] + self.layer_sizes[l+1]))
+
       weight_matrix = np.random.uniform(-limit, limit, (self.layer_sizes[l], self.layer_sizes[l+1]))
       self.list_of_weight_matrices.append(weight_matrix)
 
@@ -116,7 +104,7 @@ class NeuralNetwork:
 
   def get_parameters(self):
     return self.list_of_weight_matrices, self.list_of_bias_vectors
-  
+
   #Activation Functions and their Derivatives
   def sigmoid(self, z): #Sigmoid is used as activations for output layer alone
     return 1 / (1 + np.exp(-np.clip(z, -500, 500))) # clipping values to prevent overflow for np.exp() with very large/small numbers
@@ -174,8 +162,8 @@ class NeuralNetwork:
         self.dloss_dW[l] = a_prev.T @ dloss_dz_out
         self.dloss_db[l] = np.sum(dloss_dz_out, axis=0, keepdims=True)
 
-        if l != 0:  
-          # Don't compute the gradient of the loss with respect to the input layer activations (dloss_dz_out for input layer), 
+        if l != 0:
+          # Don't compute the gradient of the loss with respect to the input layer activations (dloss_dz_out for input layer),
           # because input neurons don’t have weights or biases to update, they are just the raw inputs (X).
           dloss_da = dloss_dz_out @ self.list_of_weight_matrices[l].T
           da_dz = self.relu_derivative(self.a_values[l])
@@ -239,7 +227,7 @@ class NeuralNetwork:
           val_f1 = f1_score(y_val, val_pred, zero_division=1)
 
           end_time = time.time()
-        
+
           if epoch % 10 == 0:
               print(f"Epoch {epoch}\t({end_time - start_time:.2f}s):")
               print(f"  Train Loss: {train_loss:.4f}   Val Loss: {val_loss:.4f}")
@@ -248,7 +236,7 @@ class NeuralNetwork:
               print(f"  Train Recall: {train_recall:.4f}   Val Recall: {val_recall:.4f}")
               print(f"  Train F1 Score: {train_f1:.4f}   Val F1: {val_f1:.4f}")
               print(f"  Total Gradient Norm: {self.total_gradient_norm():.4f}")
-              
+
   def predict(self, X_test):
     test_pred = self.forward_propagation(X_test)
     return test_pred
@@ -274,12 +262,13 @@ if __name__ == "__main__":
   # With spaCy based processing (much faster than NLTK)
   # You can still use multiprocessing with spaCy, but spaCy's nlp.pipe is also very efficient and designed for large datasets.
   processed_texts = []
-  # nlp.pipe processes texts in batches, which is efficient
-  for doc in nlp.pipe(df['text'].apply(clean_text), batch_size=1000, n_process=cpu_count()):
+  nlp = spacy.load("en_core_web_sm", disable=['parser', 'ner']) # loads Tok2Vec, Tagger (POS tagging), Attribute Ruler, Lemmatizer, and disabling the Parser and named Entity Recognition as part of the spacy model pipeline
+
+  for doc in nlp.pipe(df['text'].apply(clean_text), batch_size=1000, n_process=cpu_count()): # The 50000 texts are processed in batches of 1000 each by the number of worker processes (equal to number of CPU cores). Each worker process executes the pipeline (Tok2Vec -> Tagger (POS tagging) -> Attribute Ruler -> Lemmatizer) for those 1000 each, and returns the combined results (combined tokens) in a 'doc'.
       lemma_tokens = []
       for token in doc:
-          if not token.is_stop and token.is_alpha:
-              lemma_tokens.append(token.lemma_)
+          if not token.is_stop and token.is_alpha: # tokens that are stop words and non-alphabetic are not considered
+              lemma_tokens.append(token.lemma_) #.lemma_ returns the lemma of that token
       processed_texts.append(" ".join(lemma_tokens))
   df['processed_text'] = processed_texts
   print("Preprocessing texts completed.")
@@ -298,11 +287,9 @@ if __name__ == "__main__":
   ) # (15% / 85%) * 100 = 17%
 
   # performing TD_IDF vectorization on the splits (NOTE: TD_IDF is NOT the same as WordToVec (and GloVe))
-  vectorizer = TfidfVectorizer(max_features=10000) 
+  vectorizer = TfidfVectorizer(max_features=10000)
   #The vectorizer (e.g., CountVectorizer or TfidfVectorizer) is a feature extraction tool that learns a vocabulary from your input text data (fit),
   #and then transforms your documents into a numerical matrix of token counts or TF‑IDF weights (transform or fit_transform) using TF-IDF algorithm
-
-
   # NOTE: max_feature controls the maximum number of features (tokens/words) that will be considered when building the vocabulary.
   '''
     NOTE: TD-IDF is a numerical statistic used in information retrieval and text mining to reflect the importance of a word to a document in a collection or corpus
@@ -310,7 +297,7 @@ if __name__ == "__main__":
     When TfidfVectorizer processes a corpus of text, it identifies all unique words or n-grams.
     It then calculates the term frequency (how often each word appears) across the entire corpus.
     If max_features is specified, the vectorizer will select only the top max_features words based on their term frequency, effectively limiting the size of the vocabulary.
-    max_feature can be adjusted based on the size of our training set (X_train) so that the model can capture a broad no.of highly frequent unique words or n-grams to avoid underfitting. 
+    max_feature can be adjusted based on the size of our training set (X_train) so that the model can capture a broad no.of highly frequent unique words or n-grams to avoid underfitting.
   '''
   print("Transforming texts...")
   #X_train_vec = np.array(vectorizer.fit_transform(X_train)) # TfidfVectorizer takes your raw training data (X_train), learns the necessary features from it, transforms it into a numerical representation (like a document-term matrix), and then converts that representation into a dense NumPy array
@@ -343,4 +330,4 @@ if __name__ == "__main__":
   print("Predictions:\n")
   for i in range(len(X_test_vec)):
       y_pred = nn.predict(X_test_vec[i].reshape(1, -1))
-      print(f"Review: {X_test_duplicate.iloc[i]}, Actual Sentiment: {y_test[i][0]}, Predicted Sentiment: {'positive' if y_pred > 0.5 else 'negative'}")
+      print(f"Review: {X_test_duplicate.iloc[i]}, Actual Sentiment: {'positive' if y_test[i][0] == 1 else 'negative'}, Predicted Sentiment: {'positive' if y_pred > 0.5 else 'negative'}")
